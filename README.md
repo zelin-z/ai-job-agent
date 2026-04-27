@@ -1,8 +1,15 @@
 # AI 实习岗位分析助手
 
 一个面向求职场景的 AI 岗位分析工具。用户可以粘贴实习岗位 JD，系统会自动提取岗位核心关键词，结合个人技能画像计算岗位匹配度，并生成简历优化建议、投递建议和 BOSS 打招呼话术。
+
 ## 在线预览
+
 https://zelin-z.github.io/ai-job-agent/
+
+## GitHub 仓库
+
+https://github.com/zelin-z/ai-job-agent
+
 ## 技术栈
 
 - Vue 3
