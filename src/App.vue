@@ -3,6 +3,7 @@ import { ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
 const jdText = ref("");
+const resumeText = ref("");
 const loading = ref(false);
 const hasResult = ref(false);
 
@@ -346,7 +347,7 @@ const analyzeJD = async () => {
       },
       body: JSON.stringify({
         jdText: cleanText,
-        resumeText: "",
+        resumeText: resumeText.value.trim(),
       }),
     });
 
@@ -399,6 +400,14 @@ const clearHistory = () => {
           type="textarea"
           :rows="12"
           placeholder="请粘贴招聘岗位描述..."
+        ></el-input>
+
+        <div class="resume-label">个人简历 / 技能描述</div>
+        <el-input
+          v-model="resumeText"
+          type="textarea"
+          :rows="6"
+          placeholder="请粘贴你的简历项目经历、技能栈或个人介绍..."
         ></el-input>
 
         <el-button
@@ -510,6 +519,13 @@ h1 {
 .analyze-btn {
   width: 100%;
   margin-top: 20px;
+}
+
+.resume-label {
+  margin: 20px 0 8px;
+  text-align: left;
+  font-weight: 600;
+  color: #303133;
 }
 
 .result h3 {
