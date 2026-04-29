@@ -10,7 +10,18 @@ const isAnalyzing = ref(false);
 const isStreaming = ref(false);
 const hasResult = ref(false);
 
-const result = ref({
+type AnalysisResult = {
+  score: number;
+  keywords: string[];
+  missingSkills: string[];
+  requirements: string[];
+  match: string;
+  resumeAdvice: string;
+  applySuggestion: string;
+  greeting: string;
+};
+
+const result = ref<AnalysisResult>({
   score: 0,
   keywords: [] as string[],
   missingSkills: [] as string[],
@@ -26,17 +37,36 @@ const streamingHtml = computed(() =>
 );
 
 type HistoryItem = {
+  id: number;
   job: string;
   match: string;
-  time: string;
+  createdAt: string;
+  jdText: string;
+  resumeText: string;
+  result: AnalysisResult | null;
+  streamingText: string;
 };
 
 const HISTORY_KEY = "ai-job-agent-history";
 
-const defaultHistoryList: HistoryItem[] = [
-  { job: "前端开发实习生", match: "82%", time: "今天" },
-  { job: "实施顾问实习生", match: "76%", time: "今天" },
-];
+const defaultHistoryList: HistoryItem[] = [];
+
+const getHistoryPreview = (text: string) => {
+  return text.length > 30 ? `${text.slice(0, 30)}...` : text;
+};
+
+const normalizeHistoryItem = (item: Partial<HistoryItem> & { time?: string }) => {
+  return {
+    id: item.id || Date.now(),
+    job: item.job || "相关实习岗位",
+    match: item.match || "0%",
+    createdAt: item.createdAt || item.time || "",
+    jdText: item.jdText || "",
+    resumeText: item.resumeText || "",
+    result: item.result || null,
+    streamingText: item.streamingText || "",
+  };
+};
 
 const loadHistoryList = (): HistoryItem[] => {
   const saved = localStorage.getItem(HISTORY_KEY);
@@ -47,7 +77,9 @@ const loadHistoryList = (): HistoryItem[] => {
 
   try {
     const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : defaultHistoryList;
+    return Array.isArray(parsed)
+      ? parsed.map((item) => normalizeHistoryItem(item)).slice(0, 10)
+      : defaultHistoryList;
   } catch {
     return defaultHistoryList;
   }
@@ -62,6 +94,44 @@ watch(
   },
   { deep: true },
 );
+
+const saveHistoryItem = (job: string, score: number, sourceJdText: string) => {
+  historyList.value.unshift({
+    id: Date.now(),
+    job,
+    match: `${score}%`,
+    createdAt: new Date().toLocaleString(),
+    jdText: sourceJdText,
+    resumeText: resumeText.value.trim(),
+    result: { ...result.value },
+    streamingText: streamingText.value,
+  });
+
+  historyList.value = historyList.value.slice(0, 10);
+};
+
+const restoreHistoryItem = (item: HistoryItem) => {
+  ElMessage.closeAll();
+
+  if (!item.result && !item.jdText && !item.resumeText) {
+    ElMessage.warning("这条旧历史记录无法恢复，请重新分析");
+    return;
+  }
+
+  jdText.value = item.jdText;
+  resumeText.value = item.resumeText;
+  streamingText.value = item.streamingText || "";
+
+  if (item.result) {
+    result.value = { ...item.result };
+    hasResult.value = true;
+    ElMessage.success("已恢复历史分析记录");
+    return;
+  }
+
+  hasResult.value = false;
+  ElMessage.warning("这条旧记录只恢复了输入内容，请重新分析");
+};
 
 const getJobTitle = (text: string) => {
   if (text.includes("前端") || text.includes("Vue") || text.includes("React")) {
@@ -295,13 +365,7 @@ const applyLocalAnalysis = (cleanText: string) => {
     greeting: generateGreeting(jobTitle, keywords, score),
   };
 
-  historyList.value.unshift({
-    job: jobTitle,
-    match: `${score}%`,
-    time: new Date().toLocaleTimeString(),
-  });
-
-  historyList.value = historyList.value.slice(0, 10);
+  saveHistoryItem(jobTitle, score, cleanText);
 };
 
 const applyApiAnalysis = (apiResult: AnalyzeApiResult) => {
@@ -321,13 +385,7 @@ const applyApiAnalysis = (apiResult: AnalyzeApiResult) => {
     greeting: apiResult.bossMessage,
   };
 
-  historyList.value.unshift({
-    job: apiResult.matchedRole,
-    match: `${score}%`,
-    time: new Date().toLocaleTimeString(),
-  });
-
-  historyList.value = historyList.value.slice(0, 10);
+  saveHistoryItem(apiResult.matchedRole, score, jdText.value.trim());
 };
 
 const analyzeJD = async () => {
@@ -574,10 +632,20 @@ const clearHistory = () => {
           </el-button>
         </div>
       </template>
-      <el-table :data="historyList" style="width: 100%">
+      <el-table
+        :data="historyList"
+        empty-text="暂无历史记录"
+        style="width: 100%"
+        @row-click="restoreHistoryItem"
+      >
         <el-table-column prop="job" label="岗位名称" />
         <el-table-column prop="match" label="匹配度" />
-        <el-table-column prop="time" label="分析时间" />
+        <el-table-column prop="createdAt" label="创建时间" />
+        <el-table-column label="JD 预览">
+          <template #default="{ row }">
+            {{ getHistoryPreview(row.jdText) }}
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
   </div>
@@ -644,6 +712,14 @@ h1 {
 
 .history-card {
   margin-top: 24px;
+}
+
+.history-card :deep(.el-table__row) {
+  cursor: pointer;
+}
+
+.history-card :deep(.el-table__row:hover > td.el-table__cell) {
+  background: #f5f7fa;
 }
 
 .result {
