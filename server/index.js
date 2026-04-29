@@ -166,6 +166,80 @@ app.post("/api/analyze", async (req, res) => {
   }
 });
 
+const writeSSE = (res, payload) => {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
+
+app.post("/api/analyze-stream", async (req, res) => {
+  const { jdText = "", resumeText = "" } = req.body;
+  const cleanJdText = String(jdText).trim();
+  const cleanResumeText = String(resumeText || "").trim();
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  if (!cleanJdText) {
+    writeSSE(res, { delta: "岗位 JD 不能为空，请先粘贴完整的岗位描述。" });
+    writeSSE(res, { done: true });
+    return res.end();
+  }
+
+  if (!process.env.OPENAI_API_KEY) {
+    const mockParts = [
+      "这是本地 mock 流式分析：",
+      "该岗位与前端开发、项目实践和接口联调能力相关。",
+      cleanResumeText
+        ? "你提供了简历/技能描述，因此后续接入真 AI 后可以结合个人经历给出更具体建议。"
+        : "建议补充个人简历、项目经历或技能栈，让分析更贴近你的背景。",
+      "目前可以优先突出已匹配技能，并准备一个能说明业务场景、技术方案和个人贡献的项目案例。",
+    ];
+
+    for (const part of mockParts) {
+      writeSSE(res, { delta: part });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+
+    writeSSE(res, { done: true });
+    return res.end();
+  }
+
+  try {
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+    const model = process.env.OPENAI_MODEL || "gpt-5.5";
+    const stream = await client.responses.create({
+      model,
+      instructions:
+        "你是一个求职岗位分析助手。请用中文自然语言输出一段岗位匹配分析，不要返回 JSON，不要 Markdown，不要代码块。",
+      input: `岗位 JD:\n${cleanJdText}\n\n简历内容:\n${cleanResumeText || "未提供"}`,
+      stream: true,
+    });
+
+    for await (const event of stream) {
+      if (event.type === "response.output_text.delta" && event.delta) {
+        writeSSE(res, { delta: event.delta });
+      }
+    }
+
+    writeSSE(res, { done: true });
+    return res.end();
+  } catch (error) {
+    console.error({
+      status: error.status,
+      code: error.code,
+      message: error.message,
+    });
+    writeSSE(res, {
+      delta: "AI 流式分析暂时不可用，已收到后端错误。请稍后重试，或先使用普通分析功能。",
+    });
+    writeSSE(res, { done: true });
+    return res.end();
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });

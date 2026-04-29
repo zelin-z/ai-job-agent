@@ -4,6 +4,7 @@ import { ElMessage } from "element-plus";
 
 const jdText = ref("");
 const resumeText = ref("");
+const streamingText = ref("");
 const loading = ref(false);
 const hasResult = ref(false);
 
@@ -367,6 +368,71 @@ const analyzeJD = async () => {
   }
 };
 
+const analyzeStream = async () => {
+  const cleanText = jdText.value.trim();
+
+  if (!cleanText) {
+    ElMessage.warning("请先粘贴岗位 JD");
+    return;
+  }
+
+  streamingText.value = "";
+
+  try {
+    const response = await fetch("http://localhost:3001/api/analyze-stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jdText: cleanText,
+        resumeText: resumeText.value.trim(),
+      }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error("Stream API request failed");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let done = false;
+
+    while (!done) {
+      const result = await reader.read();
+      done = result.done;
+      buffer += decoder.decode(result.value, { stream: !done });
+
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+
+      for (const event of events) {
+        const dataLine = event
+          .split("\n")
+          .find((line) => line.startsWith("data: "));
+
+        if (!dataLine) {
+          continue;
+        }
+
+        const data = JSON.parse(dataLine.slice(6));
+
+        if (data.delta) {
+          streamingText.value += data.delta;
+        }
+
+        if (data.done) {
+          done = true;
+          break;
+        }
+      }
+    }
+  } catch {
+    ElMessage.error("流式分析失败，请确认后端服务已启动");
+  }
+};
+
 const copyGreeting = async () => {
   if (!result.value.greeting) {
     ElMessage.warning("暂无可复制的话术");
@@ -410,13 +476,18 @@ const clearHistory = () => {
           placeholder="请粘贴你的简历项目经历、技能栈或个人介绍..."
         ></el-input>
 
-        <el-button
-          type="primary"
-          class="analyze-btn"
-          :loading="loading"
-          @click="analyzeJD"
-          >开始分析</el-button
-        >
+        <div class="button-row">
+          <el-button
+            type="primary"
+            class="analyze-btn"
+            :loading="loading"
+            @click="analyzeJD"
+            >开始分析</el-button
+          >
+          <el-button class="analyze-btn" @click="analyzeStream">
+            流式分析
+          </el-button>
+        </div>
       </el-card>
       <el-card class="right-card">
         <template #header>
@@ -473,6 +544,10 @@ const clearHistory = () => {
             复制话术
           </el-button>
         </div>
+        <div v-if="streamingText" class="streaming-box">
+          <h3>AI 实时分析</h3>
+          <p>{{ streamingText }}</p>
+        </div>
       </el-card>
     </div>
     <el-card class="history-card">
@@ -516,9 +591,14 @@ h1 {
   min-height: 500px;
 }
 
+.button-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
 .analyze-btn {
   width: 100%;
-  margin-top: 20px;
 }
 
 .resume-label {
@@ -574,6 +654,25 @@ h1 {
 .copy-btn {
   width: 100%;
   margin-top: 12px;
+}
+
+.streaming-box {
+  margin-top: 20px;
+  padding: 10px 20px;
+  text-align: left;
+  border-top: 1px solid #ebeef5;
+}
+
+.streaming-box h3 {
+  margin-top: 12px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.streaming-box p {
+  line-height: 1.7;
+  color: #444;
+  white-space: pre-wrap;
 }
 
 .history-header {
