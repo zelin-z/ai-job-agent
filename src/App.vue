@@ -260,8 +260,8 @@ type AnalyzeApiResult = {
   requirements: string[];
   matchedSkills: string[];
   missingSkills: string[];
-  resumeAdvice: string;
-  interviewTips: string;
+  resumeAdvice: string[];
+  interviewTips: string[];
   bossMessage: string;
 };
 
@@ -307,8 +307,8 @@ const applyApiAnalysis = (apiResult: AnalyzeApiResult) => {
         : ["未识别到明确关键词"],
     missingSkills: apiResult.missingSkills,
     requirements: apiResult.requirements,
-    match: `模拟 AI 识别岗位为「${apiResult.matchedRole}」，匹配度为 ${score}%。${apiResult.interviewTips}`,
-    resumeAdvice: apiResult.resumeAdvice,
+    match: `模拟 AI 识别岗位为「${apiResult.matchedRole}」，匹配度为 ${score}%。${apiResult.interviewTips.join(" ")}`,
+    resumeAdvice: apiResult.resumeAdvice.join(" "),
     applySuggestion: generateApplySuggestion(score, apiResult.missingSkills),
     greeting: apiResult.bossMessage,
   };
