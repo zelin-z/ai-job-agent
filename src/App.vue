@@ -254,7 +254,75 @@ const isValidJD = (text: string) => {
   return jdWords.some((word) => cleanText.includes(word));
 };
 
-const analyzeJD = () => {
+type AnalyzeApiResult = {
+  matchedRole: string;
+  matchScore: number;
+  requirements: string[];
+  matchedSkills: string[];
+  missingSkills: string[];
+  resumeAdvice: string;
+  interviewTips: string;
+  bossMessage: string;
+};
+
+const applyLocalAnalysis = (cleanText: string) => {
+  const jobTitle = getJobTitle(cleanText);
+  const keywords = extractKeywords(cleanText);
+  const score = calculateScore(keywords);
+  const missingSkills = getMissingSkills(keywords);
+
+  result.value = {
+    score,
+    keywords: keywords.length > 0 ? keywords : ["未识别到明确关键词"],
+    missingSkills,
+    requirements: generateRequirements(keywords),
+    match:
+      score >= 80
+        ? "匹配度较高。你的后台管理系统项目可以重点突出登录鉴权、权限菜单、搜索分页、接口联调和数据可视化。"
+        : score >= 65
+          ? "匹配度中等。你可以重点强调项目开发经验、接口联调能力和学习能力，同时补充岗位中要求较多的技术点。"
+          : "匹配度一般。建议先补充该岗位核心技术栈，再投递类似岗位，避免简历和 JD 差距过大。",
+    resumeAdvice: generateResumeAdvice(keywords, missingSkills),
+    applySuggestion: generateApplySuggestion(score, missingSkills),
+    greeting: generateGreeting(jobTitle, keywords, score),
+  };
+
+  historyList.value.unshift({
+    job: jobTitle,
+    match: `${score}%`,
+    time: new Date().toLocaleTimeString(),
+  });
+
+  historyList.value = historyList.value.slice(0, 10);
+};
+
+const applyApiAnalysis = (apiResult: AnalyzeApiResult) => {
+  const score = apiResult.matchScore;
+
+  result.value = {
+    score,
+    keywords:
+      apiResult.matchedSkills.length > 0
+        ? apiResult.matchedSkills
+        : ["未识别到明确关键词"],
+    missingSkills: apiResult.missingSkills,
+    requirements: apiResult.requirements,
+    match: `模拟 AI 识别岗位为「${apiResult.matchedRole}」，匹配度为 ${score}%。${apiResult.interviewTips}`,
+    resumeAdvice: apiResult.resumeAdvice,
+    applySuggestion: generateApplySuggestion(score, apiResult.missingSkills),
+    greeting: apiResult.bossMessage,
+  };
+
+  historyList.value.unshift({
+    job: apiResult.matchedRole,
+    match: `${score}%`,
+    time: new Date().toLocaleTimeString(),
+  });
+
+  historyList.value = historyList.value.slice(0, 10);
+};
+
+const analyzeJD = async () => {
   const cleanText = jdText.value.trim();
 
   if (!cleanText) {
@@ -270,40 +338,32 @@ const analyzeJD = () => {
   loading.value = true;
   hasResult.value = false;
 
-  setTimeout(() => {
-    const jobTitle = getJobTitle(cleanText);
-    const keywords = extractKeywords(cleanText);
-    const score = calculateScore(keywords);
-    const missingSkills = getMissingSkills(keywords);
-
-    result.value = {
-      score,
-      keywords: keywords.length > 0 ? keywords : ["未识别到明确关键词"],
-      missingSkills,
-      requirements: generateRequirements(keywords),
-      match:
-        score >= 80
-          ? "匹配度较高。你的后台管理系统项目可以重点突出登录鉴权、权限菜单、搜索分页、接口联调和数据可视化。"
-          : score >= 65
-            ? "匹配度中等。你可以重点强调项目开发经验、接口联调能力和学习能力，同时补充岗位中要求较多的技术点。"
-            : "匹配度一般。建议先补充该岗位核心技术栈，再投递类似岗位，避免简历和 JD 差距过大。",
-      resumeAdvice: generateResumeAdvice(keywords, missingSkills),
-      applySuggestion: generateApplySuggestion(score, missingSkills),
-      greeting: generateGreeting(jobTitle, keywords, score),
-    };
-
-    historyList.value.unshift({
-      job: jobTitle,
-      match: `${score}%`,
-      time: new Date().toLocaleTimeString(),
+  try {
+    const response = await fetch("http://localhost:3001/api/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jdText: cleanText,
+        resumeText: "",
+      }),
     });
 
-    historyList.value = historyList.value.slice(0, 10);
+    if (!response.ok) {
+      throw new Error("Analyze API request failed");
+    }
 
+    const apiResult = (await response.json()) as AnalyzeApiResult;
+    applyApiAnalysis(apiResult);
+    ElMessage.success("分析完成");
+  } catch {
+    applyLocalAnalysis(cleanText);
+    ElMessage.warning("后端接口不可用，已使用本地规则分析");
+  } finally {
     loading.value = false;
     hasResult.value = true;
-    ElMessage.success("分析完成");
-  }, 800);
+  }
 };
 
 const copyGreeting = async () => {
