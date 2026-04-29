@@ -11,6 +11,13 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    message: "AI Job Agent API is running",
+  });
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,

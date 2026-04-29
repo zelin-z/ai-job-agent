@@ -9,6 +9,8 @@ const streamingText = ref("");
 const isAnalyzing = ref(false);
 const isStreaming = ref(false);
 const hasResult = ref(false);
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
 type AnalysisResult = {
   score: number;
@@ -405,7 +407,7 @@ const analyzeJD = async () => {
   hasResult.value = false;
 
   try {
-    const response = await fetch("http://localhost:3001/api/analyze", {
+    const response = await fetch(`${API_BASE_URL}/api/analyze`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -444,7 +446,7 @@ const analyzeStream = async () => {
   streamingText.value = "";
 
   try {
-    const response = await fetch("http://localhost:3001/api/analyze-stream", {
+    const response = await fetch(`${API_BASE_URL}/api/analyze-stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
