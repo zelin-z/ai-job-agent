@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
+import { marked } from "marked";
 
 const jdText = ref("");
 const resumeText = ref("");
@@ -18,6 +19,10 @@ const result = ref({
   applySuggestion: "",
   greeting: "",
 });
+
+const streamingHtml = computed(() =>
+  marked.parse(streamingText.value, { async: false }),
+);
 
 type HistoryItem = {
   job: string;
@@ -546,7 +551,7 @@ const clearHistory = () => {
         </div>
         <div v-if="streamingText" class="streaming-box">
           <h3>AI 实时分析</h3>
-          <p>{{ streamingText }}</p>
+          <div class="markdown-body" v-html="streamingHtml"></div>
         </div>
       </el-card>
     </div>
@@ -584,6 +589,10 @@ h1 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
 }
 
 .left-card,
@@ -595,14 +604,19 @@ h1 {
   display: flex;
   gap: 12px;
   margin-top: 20px;
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+  }
 }
 
 .analyze-btn {
   width: 100%;
+  margin-left: 0;
 }
 
 .resume-label {
-  margin: 20px 0 8px;
+  margin: 24px 0 8px;
   text-align: left;
   font-weight: 600;
   color: #303133;
@@ -658,9 +672,11 @@ h1 {
 
 .streaming-box {
   margin-top: 20px;
-  padding: 10px 20px;
+  padding: 16px 20px;
   text-align: left;
-  border-top: 1px solid #ebeef5;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: #fafafa;
 }
 
 .streaming-box h3 {
@@ -669,10 +685,25 @@ h1 {
   text-align: center;
 }
 
-.streaming-box p {
+.markdown-body h2 {
+  margin: 18px 0 10px;
+  font-size: 18px;
+}
+
+.markdown-body ul {
+  margin: 8px 0 12px;
+  padding-left: 22px;
+}
+
+.markdown-body li {
+  margin: 6px 0;
+  line-height: 1.7;
+}
+
+.markdown-body p {
+  margin: 8px 0;
   line-height: 1.7;
   color: #444;
-  white-space: pre-wrap;
 }
 
 .history-header {
