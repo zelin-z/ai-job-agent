@@ -6,7 +6,8 @@ import { marked } from "marked";
 const jdText = ref("");
 const resumeText = ref("");
 const streamingText = ref("");
-const loading = ref(false);
+const isAnalyzing = ref(false);
+const isStreaming = ref(false);
 const hasResult = ref(false);
 
 const result = ref({
@@ -342,7 +343,7 @@ const analyzeJD = async () => {
     return;
   }
 
-  loading.value = true;
+  isAnalyzing.value = true;
   hasResult.value = false;
 
   try {
@@ -368,7 +369,7 @@ const analyzeJD = async () => {
     applyLocalAnalysis(cleanText);
     ElMessage.warning("后端接口不可用，已使用本地规则分析");
   } finally {
-    loading.value = false;
+    isAnalyzing.value = false;
     hasResult.value = true;
   }
 };
@@ -381,6 +382,7 @@ const analyzeStream = async () => {
     return;
   }
 
+  isStreaming.value = true;
   streamingText.value = "";
 
   try {
@@ -435,6 +437,8 @@ const analyzeStream = async () => {
     }
   } catch {
     ElMessage.error("流式分析失败，请确认后端服务已启动");
+  } finally {
+    isStreaming.value = false;
   }
 };
 
@@ -485,12 +489,18 @@ const clearHistory = () => {
           <el-button
             type="primary"
             class="analyze-btn"
-            :loading="loading"
+            :loading="isAnalyzing"
+            :disabled="isAnalyzing || isStreaming"
             @click="analyzeJD"
-            >开始分析</el-button
+            >{{ isAnalyzing ? "分析中..." : "开始分析" }}</el-button
           >
-          <el-button class="analyze-btn" @click="analyzeStream">
-            流式分析
+          <el-button
+            class="analyze-btn"
+            :loading="isStreaming"
+            :disabled="isAnalyzing || isStreaming"
+            @click="analyzeStream"
+          >
+            {{ isStreaming ? "生成中..." : "流式分析" }}
           </el-button>
         </div>
       </el-card>
