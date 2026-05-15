@@ -25,7 +25,11 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-const createMockAnalysis = (cleanJdText, resumeText = "", source = "mock:no_api_key") => {
+const createMockAnalysis = (
+  cleanJdText,
+  resumeText = "",
+  source = "mock:no_api_key",
+) => {
   const sourceText = `${cleanJdText} ${resumeText}`.toLowerCase();
   const skillRules = [
     { label: "Vue3", aliases: ["vue3", "vue"] },
@@ -47,18 +51,27 @@ const createMockAnalysis = (cleanJdText, resumeText = "", source = "mock:no_api_
   ];
 
   const matchedSkills = skillRules
-    .filter((skill) => skill.aliases.some((alias) => sourceText.includes(alias)))
+    .filter((skill) =>
+      skill.aliases.some((alias) => sourceText.includes(alias)),
+    )
     .map((skill) => skill.label);
   const missingSkills = matchedSkills.filter((skill) =>
     ["React", "Java", "Spring Boot", "Python"].includes(skill),
   );
-  const matchScore = Math.min(95, Math.max(60, 75 + matchedSkills.length * 2 - missingSkills.length * 5));
+  const matchScore = Math.min(
+    95,
+    Math.max(60, 75 + matchedSkills.length * 2 - missingSkills.length * 5),
+  );
   const matchedRole =
-    cleanJdText.includes("前端") || sourceText.includes("vue") || sourceText.includes("react")
+    cleanJdText.includes("前端") ||
+    sourceText.includes("vue") ||
+    sourceText.includes("react")
       ? "前端开发实习生"
       : cleanJdText.includes("后端") || sourceText.includes("spring boot")
         ? "后端开发实习生"
-        : cleanJdText.includes("实施") || sourceText.includes("crm") || sourceText.includes("erp")
+        : cleanJdText.includes("实施") ||
+            sourceText.includes("crm") ||
+            sourceText.includes("erp")
           ? "实施顾问实习生"
           : "相关实习岗位";
 
@@ -72,43 +85,78 @@ const createMockAnalysis = (cleanJdText, resumeText = "", source = "mock:no_api_
       "能够根据业务需求完成页面或功能实现",
       "有良好的沟通能力和学习能力",
     ],
-    matchedSkills: matchedSkills.length > 0 ? matchedSkills : ["未识别到明确关键词"],
+    matchedSkills:
+      matchedSkills.length > 0 ? matchedSkills : ["未识别到明确关键词"],
     missingSkills,
     resumeAdvice:
       missingSkills.length > 0
-        ? [`建议优先突出已匹配技能，并对 ${missingSkills.join("、")} 做基础补充。`]
+        ? [
+            `建议优先突出已匹配技能，并对 ${missingSkills.join("、")} 做基础补充。`,
+          ]
         : ["建议重点突出项目经验、接口联调能力和与岗位技术栈相关的实践经历。"],
-    interviewTips: ["面试前准备一个能说明业务场景、技术方案和个人贡献的项目案例。"],
+    interviewTips: [
+      "面试前准备一个能说明业务场景、技术方案和个人贡献的项目案例。",
+    ],
     bossMessage: `您好，我对${matchedRole}方向很感兴趣，具备项目开发和接口联调经验，想了解该岗位是否还有机会。`,
   };
 };
 
-const analysisSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "matchedRole",
-    "matchScore",
-    "requirements",
-    "matchedSkills",
-    "missingSkills",
-    "resumeAdvice",
-    "interviewTips",
-    "bossMessage",
-  ],
-  properties: {
-    matchedRole: { type: "string" },
-    matchScore: { type: "number", minimum: 0, maximum: 100 },
-    requirements: { type: "array", items: { type: "string" } },
-    matchedSkills: { type: "array", items: { type: "string" } },
-    missingSkills: { type: "array", items: { type: "string" } },
-    resumeAdvice: { type: "array", items: { type: "string" } },
-    interviewTips: { type: "array", items: { type: "string" } },
-    bossMessage: { type: "string" },
-  },
+const formatMockV1 = (analysis) => {
+  const matchedSkills =
+    analysis.matchedSkills.length > 0
+      ? analysis.matchedSkills.join("、")
+      : "无";
+  const missingSkills =
+    analysis.missingSkills.length > 0
+      ? analysis.missingSkills.join("、")
+      : "无";
+  const suggestions =
+    analysis.resumeAdvice.length > 0
+      ? analysis.resumeAdvice
+      : ["建议补充项目细节并突出岗位相关能力。"];
+
+  return [
+    `匹配分数：${analysis.matchScore}`,
+    `已匹配技能：${matchedSkills}`,
+    `缺失技能：${missingSkills}`,
+    "优化建议：",
+    ...suggestions.map((item, index) => `${index + 1}. ${item}`),
+  ].join("\n");
 };
 
-const getOpenAIResponseText = async (cleanJdText, resumeText) => {
+const formatMockV2 = (analysis) => {
+  return JSON.stringify(
+    {
+      matchScore: analysis.matchScore,
+      matchedSkills:
+        analysis.matchedSkills[0] === "未识别到明确关键词"
+          ? []
+          : analysis.matchedSkills,
+      missingSkills: analysis.missingSkills,
+      suggestions: analysis.resumeAdvice,
+    },
+    null,
+    2,
+  );
+};
+
+const createMockPromptResponse = (
+  cleanJdText,
+  resumeText,
+  promptVersion,
+  source,
+) => {
+  const analysis = createMockAnalysis(cleanJdText, resumeText, source);
+
+  return {
+    source,
+    promptVersion,
+    content:
+      promptVersion === "v2" ? formatMockV2(analysis) : formatMockV1(analysis),
+  };
+};
+
+const getOpenAIResponseText = async (prompt) => {
   const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
@@ -116,26 +164,24 @@ const getOpenAIResponseText = async (cleanJdText, resumeText) => {
 
   const response = await client.responses.create({
     model,
-    instructions:
-      "你是一个求职岗位分析助手。请根据用户提供的岗位 JD 和简历内容，返回严格 JSON。不要 Markdown，不要解释文字，不要代码块。",
-    input: `岗位 JD:\n${cleanJdText}\n\n简历内容:\n${resumeText || "未提供"}`,
-    text: {
-      format: {
-        type: "json_schema",
-        name: "job_analysis_result",
-        strict: true,
-        schema: analysisSchema,
-      },
-    },
+    instructions: "请严格遵守用户提供的输出格式要求。",
+    input: prompt,
   });
 
   return response.output_text;
 };
 
 app.post("/api/analyze", async (req, res) => {
-  const { jdText = "", resumeText = "" } = req.body;
+  const {
+    jdText = "",
+    resumeText = "",
+    promptVersion = "v1",
+    prompt = "",
+  } = req.body;
   const cleanJdText = String(jdText).trim();
   const cleanResumeText = String(resumeText || "").trim();
+  const cleanPrompt = String(prompt || "").trim();
+  const selectedPromptVersion = promptVersion === "v2" ? "v2" : "v1";
 
   if (!cleanJdText) {
     return res.status(400).json({
@@ -144,33 +190,49 @@ app.post("/api/analyze", async (req, res) => {
     });
   }
 
+  if (!cleanPrompt) {
+    return res.status(400).json({
+      source: "validation_error",
+      error: "prompt 不能为空",
+    });
+  }
+
   if (!process.env.OPENAI_API_KEY) {
-    return res.json(createMockAnalysis(cleanJdText, cleanResumeText, "mock:no_api_key"));
+    return res.json(
+      createMockPromptResponse(
+        cleanJdText,
+        cleanResumeText,
+        selectedPromptVersion,
+        "mock:no_api_key",
+      ),
+    );
   }
 
   let outputText = "";
 
   try {
-    outputText = await getOpenAIResponseText(cleanJdText, cleanResumeText);
+    outputText = await getOpenAIResponseText(cleanPrompt);
   } catch (error) {
     console.error({
       status: error.status,
       code: error.code,
       message: error.message,
     });
-    return res.json(createMockAnalysis(cleanJdText, cleanResumeText, "mock:openai_error"));
+    return res.json(
+      createMockPromptResponse(
+        cleanJdText,
+        cleanResumeText,
+        selectedPromptVersion,
+        "mock:openai_error",
+      ),
+    );
   }
 
-  try {
-    const aiResult = JSON.parse(outputText);
-    return res.json({
-      source: "openai",
-      ...aiResult,
-    });
-  } catch {
-    console.error("JSON parse failed", outputText.slice(0, 300));
-    return res.json(createMockAnalysis(cleanJdText, cleanResumeText, "mock:json_parse_error"));
-  }
+  return res.json({
+    source: "openai",
+    promptVersion: selectedPromptVersion,
+    content: outputText,
+  });
 });
 
 const writeSSE = (res, payload) => {
@@ -221,8 +283,7 @@ app.post("/api/analyze-stream", async (req, res) => {
     const model = process.env.OPENAI_MODEL || "gpt-5.5";
     const stream = await client.responses.create({
       model,
-      instructions:
-        `你是一个求职岗位分析助手。请必须用中文 Markdown 输出岗位匹配分析，不要返回 JSON，不要使用代码块。
+      instructions: `你是一个求职岗位分析助手。请必须用中文 Markdown 输出岗位匹配分析，不要返回 JSON，不要使用代码块。
 输出格式固定为：
 
 ## 匹配结论
@@ -258,7 +319,8 @@ app.post("/api/analyze-stream", async (req, res) => {
       message: error.message,
     });
     writeSSE(res, {
-      delta: "AI 流式分析暂时不可用，已收到后端错误。请稍后重试，或先使用普通分析功能。",
+      delta:
+        "AI 流式分析暂时不可用，已收到后端错误。请稍后重试，或先使用普通分析功能。",
     });
     writeSSE(res, { done: true });
     return res.end();

@@ -2,6 +2,8 @@
 import { computed, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { marked } from "marked";
+import { analyzeMatch } from "./api";
+import type { PromptVersion } from "./prompts";
 
 const jdText = ref("");
 const resumeText = ref("");
@@ -9,6 +11,8 @@ const streamingText = ref("");
 const isAnalyzing = ref(false);
 const isStreaming = ref(false);
 const hasResult = ref(false);
+const promptVersion = ref<PromptVersion>("v2");
+const lastUsedPromptVersion = ref<PromptVersion>("v2");
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
@@ -43,6 +47,7 @@ type HistoryItem = {
   job: string;
   match: string;
   createdAt: string;
+  promptVersion: PromptVersion;
   jdText: string;
   resumeText: string;
   result: AnalysisResult | null;
@@ -57,12 +62,18 @@ const getHistoryPreview = (text: string) => {
   return text.length > 30 ? `${text.slice(0, 30)}...` : text;
 };
 
-const normalizeHistoryItem = (item: Partial<HistoryItem> & { time?: string }) => {
+const normalizeHistoryItem = (
+  item: Partial<HistoryItem> & { time?: string },
+): HistoryItem => {
   return {
     id: item.id || Date.now(),
     job: item.job || "相关实习岗位",
     match: item.match || "0%",
     createdAt: item.createdAt || item.time || "",
+    promptVersion:
+      item.promptVersion === "v1" || item.promptVersion === "v2"
+        ? item.promptVersion
+        : "v2",
     jdText: item.jdText || "",
     resumeText: item.resumeText || "",
     result: item.result || null,
@@ -78,9 +89,13 @@ const loadHistoryList = (): HistoryItem[] => {
   }
 
   try {
-    const parsed = JSON.parse(saved);
+    const parsed: unknown = JSON.parse(saved);
     return Array.isArray(parsed)
-      ? parsed.map((item) => normalizeHistoryItem(item)).slice(0, 10)
+      ? parsed
+          .map((item: unknown) =>
+            normalizeHistoryItem((item ?? {}) as Partial<HistoryItem>),
+          )
+          .slice(0, 10)
       : defaultHistoryList;
   } catch {
     return defaultHistoryList;
@@ -103,6 +118,7 @@ const saveHistoryItem = (job: string, score: number, sourceJdText: string) => {
     job,
     match: `${score}%`,
     createdAt: new Date().toLocaleString(),
+    promptVersion: lastUsedPromptVersion.value,
     jdText: sourceJdText,
     resumeText: resumeText.value.trim(),
     result: { ...result.value },
@@ -122,6 +138,8 @@ const restoreHistoryItem = (item: HistoryItem) => {
 
   jdText.value = item.jdText;
   resumeText.value = item.resumeText;
+  promptVersion.value = item.promptVersion;
+  lastUsedPromptVersion.value = item.promptVersion;
   streamingText.value = item.streamingText || "";
 
   if (item.result) {
@@ -335,14 +353,10 @@ const isValidJD = (text: string) => {
 };
 
 type AnalyzeApiResult = {
-  matchedRole: string;
   matchScore: number;
-  requirements: string[];
   matchedSkills: string[];
   missingSkills: string[];
-  resumeAdvice: string[];
-  interviewTips: string[];
-  bossMessage: string;
+  suggestions: string[];
 };
 
 const applyLocalAnalysis = (cleanText: string) => {
@@ -350,6 +364,7 @@ const applyLocalAnalysis = (cleanText: string) => {
   const keywords = extractKeywords(cleanText);
   const score = calculateScore(keywords);
   const missingSkills = getMissingSkills(keywords);
+  lastUsedPromptVersion.value = promptVersion.value;
 
   result.value = {
     score,
@@ -370,24 +385,59 @@ const applyLocalAnalysis = (cleanText: string) => {
   saveHistoryItem(jobTitle, score, cleanText);
 };
 
-const applyApiAnalysis = (apiResult: AnalyzeApiResult) => {
+const generateMatchSummary = (
+  score: number,
+  matchedSkills: string[],
+  missingSkills: string[],
+) => {
+  const matchedText =
+    matchedSkills.length > 0
+      ? matchedSkills.slice(0, 4).join("、")
+      : "项目经验";
+
+  if (score >= 80) {
+    return `整体匹配度较高，已匹配能力主要集中在 ${matchedText}。建议重点突出相关项目成果，并准备好能够证明业务理解和落地能力的案例。`;
+  }
+
+  if (score >= 65) {
+    return `整体匹配度中等，当前已覆盖 ${matchedText} 等能力，但与岗位相比仍缺少 ${missingSkills.join("、") || "部分关键细节"}。建议在简历中强化已有项目经验，同时补齐核心短板。`;
+  }
+
+  return `整体匹配度一般，当前与岗位仍存在 ${missingSkills.join("、") || "多项核心能力"} 差距。建议先补强关键技术栈，再针对性优化简历和项目表述。`;
+};
+
+const applyApiAnalysis = (
+  apiResult: AnalyzeApiResult,
+  usedPromptVersion: PromptVersion,
+) => {
   const score = apiResult.matchScore;
+  const keywords = Array.from(
+    new Set([...apiResult.matchedSkills, ...apiResult.missingSkills]),
+  );
+  const matchedSkills =
+    apiResult.matchedSkills.length > 0
+      ? apiResult.matchedSkills
+      : ["未识别到明确关键词"];
+  const jobTitle = getJobTitle(jdText.value.trim());
+
+  lastUsedPromptVersion.value = usedPromptVersion;
 
   result.value = {
     score,
-    keywords:
-      apiResult.matchedSkills.length > 0
-        ? apiResult.matchedSkills
-        : ["未识别到明确关键词"],
+    keywords: matchedSkills,
     missingSkills: apiResult.missingSkills,
-    requirements: apiResult.requirements,
-    match: `模拟 AI 识别岗位为「${apiResult.matchedRole}」，匹配度为 ${score}%。${apiResult.interviewTips.join(" ")}`,
-    resumeAdvice: apiResult.resumeAdvice.join(" "),
+    requirements: generateRequirements(keywords),
+    match: generateMatchSummary(
+      score,
+      apiResult.matchedSkills,
+      apiResult.missingSkills,
+    ),
+    resumeAdvice: apiResult.suggestions.join(" "),
     applySuggestion: generateApplySuggestion(score, apiResult.missingSkills),
-    greeting: apiResult.bossMessage,
+    greeting: generateGreeting(jobTitle, apiResult.matchedSkills, score),
   };
 
-  saveHistoryItem(apiResult.matchedRole, score, jdText.value.trim());
+  saveHistoryItem(jobTitle, score, jdText.value.trim());
 };
 
 const analyzeJD = async () => {
@@ -407,24 +457,21 @@ const analyzeJD = async () => {
   hasResult.value = false;
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/analyze`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        jdText: cleanText,
-        resumeText: resumeText.value.trim(),
-      }),
+    const analysis = await analyzeMatch({
+      apiBaseUrl: API_BASE_URL,
+      jd: cleanText,
+      resume: resumeText.value.trim(),
+      promptVersion: promptVersion.value,
     });
 
-    if (!response.ok) {
-      throw new Error("Analyze API request failed");
-    }
+    applyApiAnalysis(analysis.data, analysis.usedPromptVersion);
 
-    const apiResult = (await response.json()) as AnalyzeApiResult;
-    applyApiAnalysis(apiResult);
-    ElMessage.success("分析完成");
+    if (analysis.fallbackReason) {
+      promptVersion.value = "v1";
+      ElMessage.warning("v2 响应格式校验失败，已自动回退到 v1");
+    } else {
+      ElMessage.success(`分析完成（${analysis.usedPromptVersion}）`);
+    }
   } catch {
     applyLocalAnalysis(cleanText);
     ElMessage.warning("后端接口不可用，已使用本地规则分析");
@@ -454,6 +501,7 @@ const analyzeStream = async () => {
       body: JSON.stringify({
         jdText: cleanText,
         resumeText: resumeText.value.trim(),
+        promptVersion: promptVersion.value,
       }),
     });
 
@@ -545,6 +593,12 @@ const clearHistory = () => {
           placeholder="请粘贴你的简历项目经历、技能栈或个人介绍..."
         ></el-input>
 
+        <div class="resume-label">Prompt 版本</div>
+        <el-select v-model="promptVersion" class="prompt-select">
+          <el-option label="v1 - 纯文本输出" value="v1" />
+          <el-option label="v2 - JSON 输出" value="v2" />
+        </el-select>
+
         <div class="button-row">
           <el-button
             type="primary"
@@ -566,7 +620,7 @@ const clearHistory = () => {
       </el-card>
       <el-card class="right-card">
         <template #header>
-          <span>分析结果</span>
+          <span>分析结果（当前结果使用 {{ lastUsedPromptVersion }}）</span>
         </template>
         <el-empty v-if="!hasResult" description="请先输入 JD 并开始分析">
         </el-empty>
@@ -700,6 +754,10 @@ h1 {
   text-align: left;
   font-weight: 600;
   color: #303133;
+}
+
+.prompt-select {
+  width: 100%;
 }
 
 .result h3 {

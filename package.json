@@ -10,8 +10,14 @@
     "dev:full": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "start": "node server/index.js",
     "build": "vue-tsc -b && vite build",
+    "prepare": "husky install",
     "preview": "vite preview",
-    "deploy": "npm run build && gh-pages -d dist"
+    "deploy": "npm run build && gh-pages -d dist",
+    "lint": "eslint . --fix",
+    "lint:check": "eslint .",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "commitlint": "commitlint --edit"
   },
   "dependencies": {
     "cors": "^2.8.6",
@@ -23,13 +29,30 @@
     "vue": "^3.5.32"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.0.1",
+    "@commitlint/config-conventional": "^21.0.1",
     "@types/node": "^24.12.2",
     "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/eslint-config-typescript": "^14.7.0",
     "@vue/tsconfig": "^0.9.1",
     "concurrently": "^9.2.1",
+    "eslint": "^10.3.0",
     "gh-pages": "^6.3.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.3",
     "typescript": "~6.0.2",
     "vite": "^8.0.10",
     "vue-tsc": "^3.2.7"
+  },
+  "lint-staged": {
+    "*.{js,cjs,mjs,ts,tsx,vue}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css,scss,html}": [
+      "prettier --write"
+    ]
   }
 }
