@@ -386,30 +386,7 @@ ai-job-agent
 
 ---
 
-## 环境变量说明
 
-本地开发使用 `.env`：
-
-```bash
-PORT=3001
-OPENAI_API_KEY=你的 OpenAI API Key
-OPENAI_MODEL=gpt-4.1-mini
-```
-
-线上前端使用 `.env.production`：
-
-```bash
-VITE_API_BASE_URL=https://ai-job-agent-api-hb2e.onrender.com
-```
-
-注意：
-
-- `.env` 不要提交到 GitHub
-- `.env.example` 用于说明项目需要哪些环境变量
-- OpenAI API Key 只能放在后端环境变量中
-- `VITE_API_BASE_URL` 是公开后端地址，可以放在前端环境变量中
-
----
 
 ## 项目总结
 
